@@ -1,0 +1,5 @@
+{
+  "name": "Marq HR Time Saver Runner",
+  "description": "An infinite runner game where an HR professional uses the Marq app to jump over REP blocks and paper piles to save hours of work.",
+  "requestFramePermissions": []
+}
