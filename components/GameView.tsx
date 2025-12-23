@@ -34,6 +34,13 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
   const scoreRef = useRef(0);
   const speedRef = useRef(INITIAL_SPEED);
   const obstaclesRef = useRef<Obstacle[]>([]);
+  
+  const bgOffsets = useRef({
+    wall: 0,
+    windows: 0,
+    floor: 0
+  });
+
   const characterRef = useRef({
     y: GROUND_Y - CHARACTER_HEIGHT,
     dy: 0,
@@ -61,17 +68,21 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
 
     validAssets.forEach(([key, url]) => {
       const img = new Image();
-      // Não usamos crossOrigin pois links de chat podem ser restritivos
+      img.crossOrigin = "anonymous";
       img.src = url;
       img.onload = () => {
         imagesRef.current[key] = img;
         loadedCount++;
-        if (loadedCount === totalToLoad) setAssetsLoaded(true);
+        if (loadedCount === totalToLoad) {
+          setAssetsLoaded(true);
+        }
       };
-      img.onerror = () => {
-        console.error(`Erro ao carregar imagem: ${key}`);
+      img.onerror = (err) => {
+        console.error(`Erro ao carregar asset: ${key}`, err);
         loadedCount++;
-        if (loadedCount === totalToLoad) setAssetsLoaded(true);
+        if (loadedCount === totalToLoad) {
+          setAssetsLoaded(true);
+        }
       };
     });
   }, []);
@@ -91,8 +102,8 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
       
       if (e.key === 'ArrowDown') {
         characterRef.current.isDucking = true;
-        // Hitbox menor ao abaixar
-        characterRef.current.height = CHARACTER_HEIGHT * 0.55;
+        characterRef.current.height = CHARACTER_HEIGHT * 0.5;
+        characterRef.current.width = CHARACTER_WIDTH * 1.3;
         if (!characterRef.current.isJumping) {
           characterRef.current.y = GROUND_Y - characterRef.current.height;
         }
@@ -103,6 +114,7 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
       if (e.key === 'ArrowDown') {
         characterRef.current.isDucking = false;
         characterRef.current.height = CHARACTER_HEIGHT;
+        characterRef.current.width = CHARACTER_WIDTH;
         if (!characterRef.current.isJumping) {
             characterRef.current.y = GROUND_Y - CHARACTER_HEIGHT;
         }
@@ -117,19 +129,53 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
     };
   }, [state]);
 
-  const drawBackground = (ctx: CanvasRenderingContext2D, time: number) => {
-    ctx.fillStyle = '#64748b'; 
+  const drawBackground = (ctx: CanvasRenderingContext2D) => {
+    ctx.fillStyle = '#f8fafc';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    ctx.fillStyle = '#1e293b';
+
+    ctx.strokeStyle = '#f1f5f9';
+    ctx.lineWidth = 2;
+    const panelSpacing = 300;
+    const pOffset = bgOffsets.current.wall % panelSpacing;
+    for (let x = -panelSpacing; x < CANVAS_WIDTH + panelSpacing; x += panelSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(x - pOffset, 0);
+      ctx.lineTo(x - pOffset, GROUND_Y);
+      ctx.stroke();
+    }
+
+    const windowWidth = 120;
+    const windowHeight = 90;
+    const windowSpacing = 600;
+    const wOffset = bgOffsets.current.windows % windowSpacing;
+    
+    for (let x = -windowSpacing; x < CANVAS_WIDTH + windowSpacing; x += windowSpacing) {
+      const wx = x - wOffset;
+      const wy = 80;
+      const gradient = ctx.createLinearGradient(wx, wy, wx, wy + windowHeight);
+      gradient.addColorStop(0, '#e0f2fe');
+      gradient.addColorStop(1, '#bae6fd');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(wx, wy, windowWidth, windowHeight);
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(wx, wy, windowWidth, windowHeight);
+    }
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, GROUND_Y - 12, CANVAS_WIDTH, 12);
+
+    ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
     
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    const spacing = 60;
-    const offset = (time * speedRef.current) % spacing;
-    for (let x = -spacing; x < CANVAS_WIDTH + spacing; x += spacing) {
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.15)';
+    ctx.lineWidth = 2;
+    const floorSpacing = 225;
+    const fOffset = bgOffsets.current.floor % floorSpacing;
+    for (let x = -floorSpacing * 2; x < CANVAS_WIDTH + floorSpacing * 2; x += floorSpacing) {
       ctx.beginPath();
-      ctx.moveTo(x - offset, GROUND_Y);
-      ctx.lineTo(x - offset - 150, CANVAS_HEIGHT);
+      ctx.moveTo(x - fOffset, GROUND_Y);
+      ctx.lineTo(x - fOffset - 600, CANVAS_HEIGHT);
       ctx.stroke();
     }
   };
@@ -141,56 +187,47 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
     const w = char.width;
     const h = char.height;
 
-    // Sombra dinâmica
-    const shadowSize = w * (1 - (GROUND_Y - (y + h)) / 300);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    const shadowSize = w * (1 - (GROUND_Y - (y + h)) / 450);
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
     ctx.beginPath();
-    ctx.ellipse(x + w/2, GROUND_Y - 2, shadowSize/2, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(CHARACTER_X + w/2, GROUND_Y - 3, shadowSize/2, 8, 0, 0, Math.PI * 2);
     ctx.fill();
 
     const img = imagesRef.current.CHARACTER;
-
-    if (img && img.complete) {
-      // Pequeno balanço de corrida
+    if (img && img.complete && img.naturalWidth > 0) {
       let drawY = y;
       if (!char.isJumping && !char.isDucking && state === GameState.PLAYING) {
-        drawY += Math.sin(time * 0.02) * 4;
+        drawY += Math.sin(time * 0.015) * 6;
       }
-      
-      // Desenha a imagem. Se estiver abaixando, ela "achata"
       ctx.drawImage(img, x, drawY, w, h);
     } else {
-      // Fallback estilizado se a imagem falhar
       ctx.fillStyle = '#3b82f6';
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, h, 10);
-      ctx.fill();
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 14px Inter';
-      ctx.textAlign = 'center';
-      ctx.fillText("MÁRCIA", x + w/2, y + h/2);
+      ctx.fillRect(x, y, w, h);
     }
   };
 
   const drawObstacle = (ctx: CanvasRenderingContext2D, obs: Obstacle) => {
-    ctx.fillStyle = obs.type === ObstacleType.REP ? '#ef4444' : obs.type === ObstacleType.PAPER ? '#ffffff' : '#60a5fa';
-    ctx.beginPath();
-    ctx.roundRect(obs.x, obs.y, obs.width, obs.height, 8);
-    ctx.fill();
-    
-    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-    ctx.strokeRect(obs.x + 5, obs.y + 5, obs.width - 10, obs.height - 10);
-    
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.font = 'black 10px Inter';
-    ctx.textAlign = 'center';
-    ctx.fillText(obs.type, obs.x + obs.width/2, obs.y + obs.height/2 + 4);
+    const obsImg = imagesRef.current[obs.type];
+    if (obsImg && obsImg.complete && obsImg.naturalWidth > 0) {
+        ctx.drawImage(obsImg, obs.x, obs.y, obs.width, obs.height);
+    } else {
+        const color = obs.type === ObstacleType.REP ? '#f43f5e' : obs.type === ObstacleType.PAPER ? '#f8fafc' : '#38bdf8';
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.roundRect(obs.x, obs.y, obs.width, obs.height, 12);
+        ctx.fill();
+    }
   };
 
   const update = (time: number) => {
     if (state !== GameState.PLAYING) return;
     const char = characterRef.current;
+    const currentSpeed = speedRef.current;
     
+    bgOffsets.current.wall += currentSpeed * 0.08;
+    bgOffsets.current.windows += currentSpeed * 0.25;
+    bgOffsets.current.floor += currentSpeed * 0.85;
+
     char.dy += GRAVITY;
     char.y += char.dy;
 
@@ -205,36 +242,36 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
     speedRef.current += SPEED_INCREMENT;
     if (onSpeedUpdate) onSpeedUpdate(speedRef.current);
 
-    if (time - lastObstacleTimeRef.current > nextSpawnDistanceRef.current / speedRef.current) {
+    if (time - lastObstacleTimeRef.current > nextSpawnDistanceRef.current / currentSpeed) {
       const rand = Math.random();
       let type: ObstacleType;
       let h, w, y;
 
       if (rand < 0.45) {
-          type = ObstacleType.REP; h = 75; w = 65; y = GROUND_Y - h;
+          type = ObstacleType.REP; h = 114; w = 165; y = GROUND_Y - h;
       } else if (rand < 0.8) {
-          type = ObstacleType.PAPER; h = 55; w = 75; y = GROUND_Y - h;
+          type = ObstacleType.PAPER; h = 120; w = 120; y = GROUND_Y - h;
       } else {
-          type = ObstacleType.SUSPENDED_FILES; h = 45; w = 110; y = GROUND_Y - 180; 
+          type = ObstacleType.SUSPENDED_FILES; h = 90; w = 180; y = GROUND_Y - 315;
       }
       
       obstaclesRef.current.push({ x: CANVAS_WIDTH, y, width: w, height: h, type, passed: false });
       lastObstacleTimeRef.current = time;
-      const currentMinGap = Math.max(2800, OBSTACLE_MIN_GAP - (speedRef.current * 120));
+      const currentMinGap = Math.max(3750, OBSTACLE_MIN_GAP - (currentSpeed * 225));
       nextSpawnDistanceRef.current = currentMinGap + Math.random() * OBSTACLE_RANDOM_GAP;
     }
 
     obstaclesRef.current.forEach((obs) => {
-      obs.x -= speedRef.current;
+      obs.x -= currentSpeed;
       if (obs.x + obs.width < CHARACTER_X && !obs.passed) {
         obs.passed = true;
         scoreRef.current += 1;
         onScoreUpdate(scoreRef.current);
       }
 
-      // Hitbox interna para ser mais justo com a imagem da Márcia
-      const hPadding = 25;
-      const vPadding = 20;
+      const hPadding = char.width * 0.35;
+      const vPadding = char.height * 0.15;
+      
       if (
         CHARACTER_X + hPadding < obs.x + obs.width &&
         CHARACTER_X + char.width - hPadding > obs.x &&
@@ -244,7 +281,7 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
         onGameOver(scoreRef.current);
       }
     });
-    obstaclesRef.current = obstaclesRef.current.filter(obs => obs.x + obs.width > -100);
+    obstaclesRef.current = obstaclesRef.current.filter(obs => obs.x + obs.width > -300);
   };
 
   const render = (time: number) => {
@@ -254,21 +291,40 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
     if (!ctx) return;
 
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    update(time);
-    drawBackground(ctx, time);
+    // Só atualizamos a física se estiver no estado PLAYING
+    if (state === GameState.PLAYING) {
+        update(time);
+    }
+    
+    drawBackground(ctx);
     obstaclesRef.current.forEach(obs => drawObstacle(ctx, obs));
     drawCharacter(ctx, time);
     requestRef.current = requestAnimationFrame(render);
   };
 
   useEffect(() => {
-    if (state === GameState.PLAYING && assetsLoaded) {
-        scoreRef.current = 0;
-        speedRef.current = INITIAL_SPEED;
-        obstaclesRef.current = [];
-        characterRef.current = { y: GROUND_Y - CHARACTER_HEIGHT, dy: 0, isJumping: false, jumpCount: 0, isDucking: false, width: CHARACTER_WIDTH, height: CHARACTER_HEIGHT };
-        lastObstacleTimeRef.current = performance.now();
+    // Iniciamos a renderização tanto no TUTORIAL (parado) quanto no PLAYING (ativo)
+    if ((state === GameState.PLAYING || state === GameState.TUTORIAL) && assetsLoaded) {
+        // Reiniciamos refs apenas quando o tutorial começa (primeira vez no ciclo)
+        if (state === GameState.TUTORIAL) {
+            scoreRef.current = 0;
+            speedRef.current = INITIAL_SPEED;
+            obstaclesRef.current = [];
+            bgOffsets.current = { wall: 0, windows: 0, floor: 0 };
+            characterRef.current = { 
+              y: GROUND_Y - CHARACTER_HEIGHT, 
+              dy: 0, 
+              isJumping: false, 
+              jumpCount: 0, 
+              isDucking: false, 
+              width: CHARACTER_WIDTH, 
+              height: CHARACTER_HEIGHT 
+            };
+            lastObstacleTimeRef.current = performance.now();
+        }
         requestRef.current = requestAnimationFrame(render);
+    } else if (state === GameState.START) {
+        cancelAnimationFrame(requestRef.current);
     }
     return () => cancelAnimationFrame(requestRef.current);
   }, [state, assetsLoaded]);
@@ -279,12 +335,12 @@ const GameView: React.FC<GameViewProps> = ({ state, onGameOver, onScoreUpdate, o
         ref={canvasRef} 
         width={CANVAS_WIDTH} 
         height={CANVAS_HEIGHT}
-        className="w-full h-full object-contain"
+        className="w-full h-full object-fill md:object-contain bg-slate-900"
       />
       {!assetsLoaded && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 text-white">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="font-black tracking-widest text-xs uppercase">Conectando à Márcia...</p>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 text-white z-50 text-center p-4">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6 mx-auto"></div>
+          <p className="font-bold tracking-[0.2em] text-sm uppercase animate-pulse">Iniciando Servidores MarQ...</p>
         </div>
       )}
     </div>
